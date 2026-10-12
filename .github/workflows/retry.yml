@@ -1,0 +1,46 @@
+name: oracle-retry
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"      # 30분마다 깨어나지만, 이미 돌고 있으면 대기열에서 이어받음
+  workflow_dispatch:
+
+concurrency:
+  group: oracle-retry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q oci
+      - name: 서버 생성 시도
+        env:
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+          OCI_SUBNET: ${{ secrets.OCI_SUBNET }}
+          OCI_IMAGE: ${{ secrets.OCI_IMAGE }}
+          OCI_AD: ${{ secrets.OCI_AD }}
+          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          RUN_MINUTES: "340"
+        run: python oracle_retry.py
+      - name: 성공하면 알림(이슈) 만들고 예약 끄기
+        if: hashFiles('created') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "오라클 서버 생성됨" \
+            --body "trading 서버가 만들어졌습니다. 공인 IP 는 오라클 콘솔(Compute > Instances)에서 확인하세요."
+          gh workflow disable retry.yml --repo "$GITHUB_REPOSITORY"
